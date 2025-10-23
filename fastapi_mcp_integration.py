@@ -279,14 +279,175 @@ async def handle_json_rpc_request(json_rpc_request: dict) -> JSONResponse:
             }
         })
     
+    elif method == "resources/read":
+        uri = params.get("uri")
+        # Call the REAL resource functions from mcp_server.py
+        try:
+            if uri == "mtr://stations/list":
+                from mcp_server import get_station_list
+                resource_content = get_station_list()
+                return JSONResponse({
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "result": {
+                        "contents": [
+                            {
+                                "uri": uri,
+                                "mimeType": "text/plain",
+                                "text": resource_content
+                            }
+                        ]
+                    }
+                })
+            elif uri == "mtr://lines/map":
+                from mcp_server import get_line_map
+                resource_content = get_line_map()
+                return JSONResponse({
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "result": {
+                        "contents": [
+                            {
+                                "uri": uri,
+                                "mimeType": "text/markdown",
+                                "text": resource_content
+                            }
+                        ]
+                    }
+                })
+            else:
+                return JSONResponse({
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "error": {"code": -32602, "message": f"Resource not found: {uri}"}
+                })
+        except Exception as e:
+            logger.error(f"Resource read error: {e}")
+            return JSONResponse({
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "error": {"code": -32603, "message": f"Error reading resource: {str(e)}"}
+            })
+    
+    elif method == "prompts/get":
+        prompt_name = params.get("name")
+        prompt_args = params.get("arguments", {})
+        
+        # Call the REAL prompt functions from mcp_server.py
+        try:
+            if prompt_name == "check_next_train":
+                from mcp_server import check_next_train
+                prompt_text = check_next_train(
+                    line=prompt_args.get("line", ""),
+                    station=prompt_args.get("station", "")
+                )
+                return JSONResponse({
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "result": {
+                        "description": "Check next train for a specific station",
+                        "messages": [
+                            {
+                                "role": "user",
+                                "content": {
+                                    "type": "text",
+                                    "text": prompt_text
+                                }
+                            }
+                        ]
+                    }
+                })
+            elif prompt_name == "plan_mtr_journey":
+                from mcp_server import plan_mtr_journey
+                prompt_text = plan_mtr_journey(
+                    origin=prompt_args.get("origin", ""),
+                    destination=prompt_args.get("destination", "")
+                )
+                return JSONResponse({
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "result": {
+                        "description": "Plan a journey using MTR",
+                        "messages": [
+                            {
+                                "role": "user",
+                                "content": {
+                                    "type": "text",
+                                    "text": prompt_text
+                                }
+                            }
+                        ]
+                    }
+                })
+            elif prompt_name == "compare_stations":
+                from mcp_server import compare_stations
+                prompt_text = compare_stations(
+                    station1=prompt_args.get("station1", ""),
+                    station2=prompt_args.get("station2", ""),
+                    station3=prompt_args.get("station3", "")
+                )
+                return JSONResponse({
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "result": {
+                        "description": "Compare train frequencies at multiple stations",
+                        "messages": [
+                            {
+                                "role": "user",
+                                "content": {
+                                    "type": "text",
+                                    "text": prompt_text
+                                }
+                            }
+                        ]
+                    }
+                })
+            else:
+                return JSONResponse({
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "error": {"code": -32602, "message": f"Prompt not found: {prompt_name}"}
+                })
+        except Exception as e:
+            logger.error(f"Prompt get error: {e}")
+            return JSONResponse({
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "error": {"code": -32603, "message": f"Error getting prompt: {str(e)}"}
+            })
+    
     elif method == "tools/call":
         tool_name = params.get("name")
         arguments = params.get("arguments", {})
+        
+        # Call the REAL tool from mcp_server.py
+        try:
+            if tool_name == "get_next_train_schedule":
+                from mcp_server import get_next_train_schedule
+                result_text = get_next_train_schedule(
+                    line=arguments.get("line", ""),
+                    sta=arguments.get("sta", ""),
+                    lang=arguments.get("lang", "EN")
+                )
+            elif tool_name == "get_next_train_structured":
+                from mcp_server import get_next_train_structured
+                result_data = get_next_train_structured(
+                    line=arguments.get("line", ""),
+                    sta=arguments.get("sta", ""),
+                    lang=arguments.get("lang", "EN")
+                )
+                result_text = json.dumps(result_data, indent=2)
+            else:
+                result_text = f"❌ Unknown tool: '{tool_name}'"
+        except Exception as e:
+            logger.error(f"Tool execution error: {e}")
+            result_text = f"❌ Error executing tool '{tool_name}': {str(e)}"
+        
         return JSONResponse({
             "jsonrpc": "2.0",
             "id": request_id,
             "result": {
-                "content": [{"type": "text", "text": f"Tool '{tool_name}' result: {json.dumps(arguments)}"}]
+                "content": [{"type": "text", "text": result_text}]
             }
         })
     
@@ -605,21 +766,55 @@ async def handle_mcp_messages(
                 }
             })
         
+        elif method == "resources/read":
+            # Delegate to helper function
+            return await handle_json_rpc_request(json_rpc_request)
+        
+        elif method == "prompts/get":
+            # Delegate to helper function
+            return await handle_json_rpc_request(json_rpc_request)
+        
         elif method == "tools/call":
             tool_name = params.get("name")
             arguments = params.get("arguments", {})
             
-            # Mock tool execution
+            # Simulate actual tool execution with mock data
+            if tool_name == "get_next_train_schedule":
+                station = arguments.get("station", "Unknown")
+                line = arguments.get("line", "Any Line")
+                result_text = f"""🚇 Next Train Schedule for {station} Station
+            
+Line: {line}
+Time: {datetime.now().strftime('%H:%M:%S')}
+
+Upcoming Trains:
+1. Train to Central - Arriving in 2 minutes
+2. Train to Tsuen Wan - Arriving in 5 minutes
+3. Train to Admiralty - Arriving in 8 minutes
+
+Note: This is mock data. Integrate with actual MTR API for real-time information."""
+                
+            elif tool_name == "get_next_train_structured":
+                station = arguments.get("station", "Unknown")
+                direction = arguments.get("direction", "UP")
+                result_text = json.dumps({
+                    "station": station,
+                    "direction": direction,
+                    "timestamp": datetime.now().isoformat(),
+                    "trains": [
+                        {"destination": "Central", "arrival_minutes": 2, "platform": "1"},
+                        {"destination": "Tsuen Wan", "arrival_minutes": 5, "platform": "2"},
+                        {"destination": "Admiralty", "arrival_minutes": 8, "platform": "1"}
+                    ]
+                }, indent=2)
+            else:
+                result_text = f"Tool '{tool_name}' executed with arguments: {json.dumps(arguments)}\n\nResult: Mock data - integrate with actual MTR API"
+            
             return JSONResponse({
                 "jsonrpc": "2.0",
                 "id": request_id,
                 "result": {
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": f"Tool '{tool_name}' executed with arguments: {json.dumps(arguments)}\n\nResult: Mock data - integrate with actual MTR API"
-                        }
-                    ]
+                    "content": [{"type": "text", "text": result_text}]
                 }
             })
         
