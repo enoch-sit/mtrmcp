@@ -317,11 +317,13 @@ async def handle_mcp_messages(
         
         # Handle MCP methods
         if method == "initialize":
+            # Use the protocol version requested by the client
+            requested_version = params.get("protocolVersion", "2024-11-05")
             return JSONResponse({
                 "jsonrpc": "2.0",
                 "id": request_id,
                 "result": {
-                    "protocolVersion": "2024-11-05",
+                    "protocolVersion": requested_version,  # Echo back client's version
                     "capabilities": {
                         "tools": {},
                         "resources": {},
