@@ -233,10 +233,21 @@ async def handle_json_rpc_request(json_rpc_request: dict) -> JSONResponse:
                         "inputSchema": {
                             "type": "object",
                             "properties": {
-                                "station": {"type": "string", "description": "MTR station code"},
-                                "line": {"type": "string", "description": "MTR line name (optional)"}
+                                "line": {
+                                    "type": "string",
+                                    "description": "MTR line code (e.g., 'TKL', 'ISL', 'TWL')"
+                                },
+                                "sta": {
+                                    "type": "string",
+                                    "description": "MTR station code (e.g., 'TKO', 'CEN', 'TST')"
+                                },
+                                "lang": {
+                                    "type": "string",
+                                    "description": "Language: 'EN' or 'TC'",
+                                    "enum": ["EN", "TC"]
+                                }
                             },
-                            "required": ["station"]
+                            "required": ["line", "sta"]
                         }
                     },
                     {
@@ -245,10 +256,21 @@ async def handle_json_rpc_request(json_rpc_request: dict) -> JSONResponse:
                         "inputSchema": {
                             "type": "object",
                             "properties": {
-                                "station": {"type": "string"},
-                                "direction": {"type": "string", "enum": ["UP", "DOWN"]}
+                                "line": {
+                                    "type": "string",
+                                    "description": "MTR line code (e.g., 'TKL', 'ISL', 'TWL')"
+                                },
+                                "sta": {
+                                    "type": "string",
+                                    "description": "MTR station code (e.g., 'TKO', 'CEN', 'TST')"
+                                },
+                                "lang": {
+                                    "type": "string",
+                                    "description": "Language: 'EN' or 'TC'",
+                                    "enum": ["EN", "TC"]
+                                }
                             },
-                            "required": ["station"]
+                            "required": ["line", "sta"]
                         }
                     }
                 ]
@@ -691,16 +713,21 @@ async def handle_mcp_messages(
                             "inputSchema": {
                                 "type": "object",
                                 "properties": {
-                                    "station": {
-                                        "type": "string",
-                                        "description": "MTR station code (e.g., 'CEN', 'TST')"
-                                    },
                                     "line": {
                                         "type": "string",
-                                        "description": "MTR line name (optional)"
+                                        "description": "MTR line code (e.g., 'TKL', 'ISL', 'TWL')"
+                                    },
+                                    "sta": {
+                                        "type": "string",
+                                        "description": "MTR station code (e.g., 'TKO', 'CEN', 'TST')"
+                                    },
+                                    "lang": {
+                                        "type": "string",
+                                        "description": "Language: 'EN' or 'TC'",
+                                        "enum": ["EN", "TC"]
                                     }
                                 },
-                                "required": ["station"]
+                                "required": ["line", "sta"]
                             }
                         },
                         {
@@ -709,10 +736,21 @@ async def handle_mcp_messages(
                             "inputSchema": {
                                 "type": "object",
                                 "properties": {
-                                    "station": {"type": "string"},
-                                    "direction": {"type": "string", "enum": ["UP", "DOWN"]}
+                                    "line": {
+                                        "type": "string",
+                                        "description": "MTR line code (e.g., 'TKL', 'ISL', 'TWL')"
+                                    },
+                                    "sta": {
+                                        "type": "string",
+                                        "description": "MTR station code (e.g., 'TKO', 'CEN', 'TST')"
+                                    },
+                                    "lang": {
+                                        "type": "string",
+                                        "description": "Language: 'EN' or 'TC'",
+                                        "enum": ["EN", "TC"]
+                                    }
                                 },
-                                "required": ["station"]
+                                "required": ["line", "sta"]
                             }
                         }
                     ]
