@@ -213,21 +213,202 @@ async def mcp_info():
     }
 
 
-# SSE endpoint for MCP Inspector compatibility
-@app.get("/sse")
+# Helper function to handle JSON-RPC requests
+async def handle_json_rpc_request(json_rpc_request: dict) -> JSONResponse:
+    """Process a JSON-RPC request and return appropriate response"""
+    method = json_rpc_request.get("method")
+    request_id = json_rpc_request.get("id")
+    params = json_rpc_request.get("params", {})
+    
+    # Handle different MCP methods
+    if method == "tools/list":
+        return JSONResponse({
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "result": {
+                "tools": [
+                    {
+                        "name": "get_next_train_schedule",
+                        "description": "Get next train schedule for MTR stations",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "station": {"type": "string", "description": "MTR station code"},
+                                "line": {"type": "string", "description": "MTR line name (optional)"}
+                            },
+                            "required": ["station"]
+                        }
+                    },
+                    {
+                        "name": "get_next_train_structured",
+                        "description": "Get structured next train information",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "station": {"type": "string"},
+                                "direction": {"type": "string", "enum": ["UP", "DOWN"]}
+                            },
+                            "required": ["station"]
+                        }
+                    }
+                ]
+            }
+        })
+    
+    elif method == "resources/list":
+        return JSONResponse({
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "result": {
+                "resources": [
+                    {"uri": "mtr://stations/list", "name": "MTR Stations List", "mimeType": "application/json"},
+                    {"uri": "mtr://lines/map", "name": "MTR Lines Map", "mimeType": "application/json"}
+                ]
+            }
+        })
+    
+    elif method == "prompts/list":
+        return JSONResponse({
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "result": {
+                "prompts": [
+                    {"name": "check_next_train", "description": "Check next train for a station"},
+                    {"name": "plan_mtr_journey", "description": "Plan MTR journey"}
+                ]
+            }
+        })
+    
+    elif method == "tools/call":
+        tool_name = params.get("name")
+        arguments = params.get("arguments", {})
+        return JSONResponse({
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "result": {
+                "content": [{"type": "text", "text": f"Tool '{tool_name}' result: {json.dumps(arguments)}"}]
+            }
+        })
+    
+    else:
+        return JSONResponse({
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "error": {"code": -32601, "message": f"Method not found: {method}"}
+        })
+
+
+# SSE endpoint for MCP Inspector compatibility - Streamable HTTP (2025-06-18)
+@app.api_route("/sse", methods=["GET", "POST"])
 async def sse_endpoint(request: Request):
-    """Server-Sent Events endpoint for MCP Inspector - MCP Protocol Compatible"""
+    """Server-Sent Events endpoint for MCP Inspector - Streamable HTTP Protocol"""
     
     import uuid
+    
+    # NEW PROTOCOL: POST with initialize request
+    if request.method == "POST":
+        try:
+            # Read the initialize request
+            body = await request.json()
+            method = body.get("method")
+            request_id = body.get("id")
+            params = body.get("params", {})
+            
+            logger.info(f"Streamable HTTP POST: method={method}, id={request_id}")
+            
+            # Must be initialize request
+            if method != "initialize":
+                # For non-initialize, return JSON response directly
+                return await handle_json_rpc_request(body)
+            
+            # Create session for this connection
+            session_id = str(uuid.uuid4())
+            active_sessions[session_id] = {"created": datetime.now(), "active": True}
+            
+            # Return SSE stream with InitializeResult
+            async def init_stream():
+                try:
+                    # Send initialize result as first message
+                    requested_version = params.get("protocolVersion", "2024-11-05")
+                    init_result = {
+                        "jsonrpc": "2.0",
+                        "id": request_id,
+                        "result": {
+                            "protocolVersion": requested_version,
+                            "capabilities": {
+                                "tools": {},
+                                "resources": {},
+                                "prompts": {},
+                                "logging": {}
+                            },
+                            "serverInfo": {
+                                "name": "mtr_next_train",
+                                "version": "1.0.0"
+                            }
+                        }
+                    }
+                    yield f"event: message\ndata: {json.dumps(init_result)}\n\n"
+                    logger.info(f"SSE session {session_id}: sent initialize result")
+                    
+                    # Keep connection alive with heartbeats
+                    heartbeat_count = 0
+                    while True:
+                        if await request.is_disconnected():
+                            logger.info(f"SSE session {session_id}: client disconnected")
+                            break
+                        
+                        heartbeat_count += 1
+                        notification = {
+                            "jsonrpc": "2.0",
+                            "method": "notifications/message",
+                            "params": {
+                                "level": "info",
+                                "logger": "mcp-server",
+                                "data": {
+                                    "type": "heartbeat",
+                                    "count": heartbeat_count,
+                                    "timestamp": datetime.now().isoformat(),
+                                    "status": "running" if mcp_manager.is_running else "stopped"
+                                }
+                            }
+                        }
+                        yield f"event: message\ndata: {json.dumps(notification)}\n\n"
+                        await asyncio.sleep(30)
+                        
+                except Exception as e:
+                    logger.error(f"SSE init stream error: {e}")
+                finally:
+                    active_sessions.pop(session_id, None)
+                    logger.info(f"SSE session {session_id}: cleaned up")
+            
+            return StreamingResponse(
+                init_stream(),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive",
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Headers": "Cache-Control, Last-Event-ID"
+                }
+            )
+            
+        except Exception as e:
+            logger.error(f"POST /sse error: {e}")
+            return JSONResponse(
+                {"jsonrpc": "2.0", "error": {"code": -32603, "message": str(e)}},
+                status_code=500
+            )
+    
+    # OLD PROTOCOL: GET for backwards compatibility
     session_id = str(uuid.uuid4())
     active_sessions[session_id] = {"created": datetime.now(), "active": True}
     
     async def event_stream():
         try:
-            # MCP REQUIRED: Send endpoint event first
+            # OLD PROTOCOL: Send endpoint event first
             endpoint_path = f"/mcp/messages/?session_id={session_id}"
             yield f"event: endpoint\ndata: {endpoint_path}\n\n"
-            logger.info(f"SSE session {session_id}: sent endpoint event")
+            logger.info(f"SSE session {session_id}: sent endpoint event (old protocol)")
             
             # Keep connection alive with heartbeats as JSON-RPC notifications
             heartbeat_count = 0
