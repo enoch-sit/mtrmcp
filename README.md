@@ -71,8 +71,8 @@ AWS_SECRET_ACCESS_KEY=your-aws-secret
 AWS_REGION=us-east-1
 BEDROCK_MODEL=amazon.nova-lite-v1:0
 
-# MCP Server
-MCP_SERVER_URL=http://localhost:8000/sse
+# MCP Server (Updated to port 8080 to avoid ChromaDB conflicts)
+MCP_SERVER_URL=http://localhost:8080/mcp/sse
 
 # LangSmith (Optional - for observability)
 LANGCHAIN_TRACING_V2=true
@@ -82,21 +82,28 @@ LANGCHAIN_PROJECT=mtr-demo
 
 ### 3. Start MCP Server
 
+**Option A: FastAPI Integration (Recommended - serves under /mcp path)**
 ```powershell
-python mcp_server.py
+python fastapi_mcp_integration.py
 ```
 
 Expected output:
 ```
 ============================================================
-🚀 Starting MCP Server
+🚀 Starting MTR MCP Server under /mcp
 ============================================================
-📡 SSE Endpoint: http://127.0.0.1:8000/sse
-🔍 MCP Inspector: Use http://127.0.0.1:8000/sse
-⚠️  Note: http://127.0.0.1:8000 (without /sse) will give 404
+🌐 Server: http://0.0.0.0:8080
+📡 MCP Root: http://0.0.0.0:8080/mcp/
+📡 SSE Endpoint: http://0.0.0.0:8080/mcp/sse
+� JSON-RPC: http://0.0.0.0:8080/mcp/jsonrpc
+📖 API Docs: http://0.0.0.0:8080/mcp/docs
+🔍 Health Check: http://0.0.0.0:8080/mcp/health
 ============================================================
-INFO:     Started server process [71940]
-INFO:     Uvicorn running on http://127.0.0.1:8000
+```
+
+**Option B: Original MCP Server (port 8080)**
+```powershell
+python mcp_server.py
 ```
 
 ### 4. Run LangGraph Demo

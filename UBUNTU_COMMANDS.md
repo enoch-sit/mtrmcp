@@ -39,6 +39,15 @@ curl http://localhost:8080/mcp/info | jq
 curl -N http://localhost:8080/mcp/sse
 ```
 
+## 🔒 HTTPS Support
+
+**✅ MCP Inspector fully supports HTTPS!** You can use:
+
+### HTTPS URLs for MCP Inspector:
+- `https://yourdomain.com:8080/mcp/sse` ✅
+- `https://localhost:8080/mcp/sse` (with SSL certificate) ✅  
+- `http://localhost:8080/mcp/sse` (development) ✅
+
 ## 🛑 Stop Commands
 
 ### Stop Docker Container

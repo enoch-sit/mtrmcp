@@ -432,7 +432,7 @@ async def custom_openapi():
     return app.openapi_schema
 
 
-def run_server(host: str = "0.0.0.0", port: int = 8000):
+def run_server(host: str = "0.0.0.0", port: int = 8080):
     """Run the FastAPI server with MCP under /mcp"""
     print("=" * 70)
     print("🚀 Starting MTR MCP Server under /mcp")
@@ -467,7 +467,7 @@ if __name__ == "__main__":
     
     # Parse command line arguments
     host = "0.0.0.0"
-    port = 8000
+    port = 8080
     
     if len(sys.argv) > 1:
         port = int(sys.argv[1])

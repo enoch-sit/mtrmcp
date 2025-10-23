@@ -31,10 +31,10 @@ USER appuser
 
 # Health check for /mcp path
 HEALTHCHECK --interval=30s --timeout=30s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:8000/mcp/health || exit 1
+    CMD curl -f http://localhost:8080/mcp/health || exit 1
 
-# Expose port 8000 (all services under /mcp)
-EXPOSE 8000
+# Expose port 8080 (all services under /mcp)
+EXPOSE 8080
 
 # Default command - run FastAPI MCP integration under /mcp
-CMD ["python", "fastapi_mcp_integration.py", "8000", "0.0.0.0"]
+CMD ["python", "fastapi_mcp_integration.py", "8080", "0.0.0.0"]
