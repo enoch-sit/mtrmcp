@@ -3,11 +3,16 @@ Test for the machine-readable decoder tool `get_next_train_structured`.
 """
 import asyncio
 import json
-from mcp.client.sse import sse_client
+import os
+from dotenv import load_dotenv
+from mcp.client.streamable_http import streamablehttp_client
 from mcp import ClientSession
 
+load_dotenv()
+
 async def test_structured():
-    async with sse_client("http://127.0.0.1:8000/sse") as (read, write):
+    mcp_url = os.getenv("MCP_SERVER_URL", "https://project-1-04.eduhk.hk/mcp/sse")
+    async with streamablehttp_client(mcp_url) as (read, write, _):
         async with ClientSession(read, write) as session:
             await session.initialize()
             print('✅ Connected to MCP server\n')

@@ -34,7 +34,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage, ToolMessage
 from langchain_core.tools import tool
 from mcp import ClientSession
-from mcp.client.sse import sse_client
+from mcp.client.streamable_http import streamablehttp_client
 from typing import TypedDict, Annotated
 
 # Load environment variables
@@ -341,19 +341,31 @@ Be concise, helpful, and conversational!"""
 async def run_full_mcp_demo():
     """
     Main demo: showcases all MCP features in action.
+    
+    ⚠️  IMPORTANT: This demo requires:
+    1. MCP server running (either local or deployed)
+    2. AWS credentials configured for Bedrock
+    3. Proper MCP protocol version (2025-06-18 Streamable HTTP)
     """
     print("=" * 70)
     print("🚇 MTR MCP Demo - Full Feature Showcase")
     print("=" * 70)
     
-    # Connect to existing MCP server
+    # Determine MCP server URL (prefer deployed production server)
+    mcp_server_url = os.getenv("MCP_SERVER_URL", "https://project-1-04.eduhk.hk/mcp/sse")
+    
+    # Connect to MCP server
     print("\n🚀 Connecting to MCP server...")
-    print("   ✓ Attempting to connect to http://127.0.0.1:8000/sse")
-    print("   (Make sure mcp_server.py is running in another terminal)")
+    print(f"   ✓ Attempting to connect to {mcp_server_url}")
+    
+    if "localhost" in mcp_server_url or "127.0.0.1" in mcp_server_url:
+        print("   (Make sure mcp_server.py or fastapi_mcp_integration.py is running locally)")
+    else:
+        print("   (Using deployed production server)")
     
     try:
-        # Connect to MCP server via SSE  
-        async with sse_client("http://127.0.0.1:8000/sse") as (read, write):
+        # Connect to MCP server via Streamable HTTP (2025-06-18 protocol)
+        async with streamablehttp_client(mcp_server_url) as (read, write, _):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 
@@ -551,15 +563,29 @@ async def run_full_mcp_demo():
     
     except Exception as e:
         print(f"\n❌ Error during demo: {e}")
-        print("Make sure:")
-        print("   1. MCP server is running: python mcp_server.py")
-        print("   2. AWS credentials are configured")
-        print("   3. Network connection is available")
+        print("\nTroubleshooting:")
+        print("   1. Check MCP server URL in .env file:")
+        print("      MCP_SERVER_URL=https://project-1-04.eduhk.hk/mcp/sse (production)")
+        print("      or")
+        print("      MCP_SERVER_URL=http://localhost:8080/mcp/sse (local)")
+        print("   2. If using local server, ensure it's running:")
+        print("      python fastapi_mcp_integration.py")
+        print("   3. Verify AWS credentials are configured")
+        print("   4. Check network connection")
 
 
 def main():
     """Main entry point"""
     print("\n🚀 Starting Full MCP Demo with Memory & Multi-turn Context...\n")
+    
+    # Check MCP server URL
+    mcp_server_url = os.getenv("MCP_SERVER_URL", "https://project-1-04.eduhk.hk/mcp/sse")
+    print(f"✓ MCP Server URL: {mcp_server_url}")
+    
+    if "localhost" in mcp_server_url or "127.0.0.1" in mcp_server_url:
+        print("  (Using local development server)")
+    else:
+        print("  (Using deployed production server)")
     
     # Check environment variables
     required_vars = ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"]

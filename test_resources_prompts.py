@@ -7,9 +7,11 @@ and Prompts (user-controlled templates) features.
 
 import asyncio
 import os
-from mcp.client.sse import sse_client
+from dotenv import load_dotenv
+from mcp.client.streamable_http import streamablehttp_client
 from mcp import ClientSession
 
+load_dotenv()
 
 async def test_resources_and_prompts():
     """Test Resources and Prompts features"""
@@ -18,10 +20,10 @@ async def test_resources_and_prompts():
     print("🧪 Testing MCP Resources & Prompts")
     print("=" * 60)
     
-    mcp_url = "http://localhost:8000/sse"
+    mcp_url = os.getenv("MCP_SERVER_URL", "https://project-1-04.eduhk.hk/mcp/sse")
     
     try:
-        async with sse_client(mcp_url) as (read_stream, write_stream):
+        async with streamablehttp_client(mcp_url) as (read_stream, write_stream, _):
             async with ClientSession(read_stream, write_stream) as session:
                 await session.initialize()
                 
@@ -129,7 +131,4 @@ async def test_resources_and_prompts():
 
 if __name__ == "__main__":
     print("\n🚀 Starting MCP Resources & Prompts Test...\n")
-    print("⚠️  Make sure mcp_server.py is running on port 8000")
-    print("   Command: python mcp_server.py\n")
-    
     asyncio.run(test_resources_and_prompts())
