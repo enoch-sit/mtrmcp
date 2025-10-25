@@ -645,5 +645,720 @@ print(f"Improved: {improved.experiment_name}")
    - Formal: More concise, faster
    - Friendly: More helpful, engaging
    - Both: Equally correct, perfect tool usage`
+    },
+    
+    // ========================================
+    // NEW SECTION: MCP Server & FastAPI Integration
+    // ========================================
+    {
+        title: "What is MCP (Model Context Protocol)?",
+        bullets: [
+            "MCP is an open protocol that standardizes how AI applications connect to external data sources and tools.",
+            "It provides a universal interface for LLMs to access context: databases, APIs, file systems, and live services.",
+            "MCP uses JSON-RPC 2.0 for communication with three core primitives: Resources, Prompts, and Tools."
+        ],
+        code: `# MCP Architecture
+
+┌─────────────┐
+│  AI Client  │  (Claude Desktop, Cursor, Custom Apps)
+│   (LLM)     │
+└──────┬──────┘
+       │ MCP Protocol (JSON-RPC 2.0)
+       │
+┌──────▼──────┐
+│ MCP Server  │  (Your Backend Service)
+└──────┬──────┘
+       │
+       ├─► 📦 Resources (Read-only data)
+       ├─► 📝 Prompts (Templates)
+       └─► 🔧 Tools (Actions)
+
+# Protocol Version: 2025-06-18
+# Transport: HTTP Streamable, SSE, stdio`
+    },
+    {
+        title: "How Does FastAPI Integrate with MCP?",
+        bullets: [
+            "FastAPI serves as the ASGI web framework, while FastMCP handles MCP protocol compliance.",
+            "The integration allows MCP servers to be mounted at custom paths (e.g., /mcp) in existing FastAPI apps.",
+            "FastAPI provides production features: CORS, authentication, routing, while FastMCP ensures JSON-RPC compliance."
+        ],
+        code: `from fastapi import FastAPI
+from mcp.server.fastmcp import FastMCP
+
+# Create FastAPI app
+app = FastAPI(root_path="/mcp")
+
+# Create MCP server
+mcp = FastMCP("MTR Train Server")
+
+@mcp.tool()
+def get_train_schedule(line: str, station: str) -> str:
+    """Get real-time MTR train schedule"""
+    return query_mtr_api(line, station)
+
+# Mount MCP server to FastAPI
+app.mount("/", mcp.streamable_http_app())
+
+# Result: http://yourhost/mcp/
+# - Handles MCP protocol automatically
+# - Compatible with MCP Inspector
+# - Production-ready with FastAPI features`
+    },
+    {
+        title: "What is the MTR MCP Server?",
+        bullets: [
+            "Real-world production MCP server providing Hong Kong MTR train schedules via government API.",
+            "Implements 2 tools (human + machine output), 2 resources (stations/lines), and 3 prompt templates.",
+            "Features fuzzy matching for station names (handles typos), multi-language support (EN/TC), and error handling."
+        ],
+        code: `from mcp.server.fastmcp import FastMCP
+
+mcp = FastMCP("mtr_next_train")
+
+# Tools
+@mcp.tool()
+def get_next_train_schedule(line: str, sta: str, lang: str = "EN"):
+    """Human-readable train schedule with emojis"""
+    # Returns: 🚇 formatted schedule with platforms, times
+    
+@mcp.tool()
+def get_next_train_structured(line: str, sta: str, lang: str = "EN"):
+    """Machine-readable JSON for AI agents"""
+    # Returns: {"up": [...], "down": [...], "timestamp": "..."}
+
+# Resources
+@mcp.resource("mtr://stations/list")
+def get_station_list():
+    """80+ MTR stations across 10 lines"""
+    
+@mcp.resource("mtr://lines/map")
+def get_line_map():
+    """21 interchange stations with connectivity"""
+
+# Prompts
+@mcp.prompt()
+def plan_mtr_journey(origin: str, destination: str):
+    """Journey planning prompt template"""`
+    },
+    {
+        title: "What are MCP Protocol Compliance Requirements?",
+        bullets: [
+            "JSON-RPC 2.0: All messages follow strict request/response format with id, method, params.",
+            "Initialization: Server negotiates protocol version (2025-06-18) and declares capabilities during handshake.",
+            "Lifecycle Management: Proper startup, request processing, and shutdown with resource cleanup."
+        ],
+        code: `# Initialization Handshake
+# Client → Server:
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "initialize",
+  "params": {
+    "protocolVersion": "2025-06-18",
+    "clientInfo": {"name": "MCP Inspector"}
+  }
+}
+
+# Server → Client:
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "protocolVersion": "2025-06-18",
+    "capabilities": {
+      "tools": {},
+      "resources": {},
+      "prompts": {}
+    },
+    "serverInfo": {"name": "mtr_next_train", "version": "1.0.0"}
+  }
+}
+
+# FastMCP handles this automatically!`
+    },
+    {
+        title: "What are FastAPI Mounting Patterns for MCP?",
+        bullets: [
+            "Embedded: Run MCP as standalone FastAPI app (simplest, single-purpose servers).",
+            "Mounted: Integrate MCP into existing FastAPI app at custom path (production pattern).",
+            "Multiple Servers: Host multiple specialized MCP servers in one FastAPI app (microservices)."
+        ],
+        code: `# Pattern 1: Embedded (Standalone)
+mcp = FastMCP("Weather Server")
+mcp.run(transport="streamable-http")  # Port 8000
+
+# Pattern 2: Mounted to Existing App
+app = FastAPI()
+mcp = FastMCP("API MCP Server")
+app.mount("/mcp", mcp.streamable_http_app())
+# Access: http://host/mcp/
+
+# Pattern 3: Multiple MCP Servers
+weather_mcp = FastMCP("Weather Server")
+news_mcp = FastMCP("News Server")
+
+app = Starlette(routes=[
+    Mount("/weather", app=weather_mcp.streamable_http_app()),
+    Mount("/news", app=news_mcp.streamable_http_app()),
+])
+# Access: http://host/weather/, http://host/news/`
+    },
+    {
+        title: "How Does MCP Security Work?",
+        bullets: [
+            "CORS Configuration: Expose Mcp-Session-Id header for browser-based clients with origin whitelisting.",
+            "OAuth 2.1 Authentication: Implement TokenVerifier for JWT validation and scope-based access control.",
+            "Localhost Binding: Default to 127.0.0.1 for security, use reverse proxy (nginx/caddy) for production."
+        ],
+        code: `from starlette.middleware.cors import CORSMiddleware
+
+# CORS for browser clients
+app = CORSMiddleware(
+    mcp.streamable_http_app(),
+    allow_origins=["https://your-app.com"],  # Whitelist
+    allow_methods=["GET", "POST", "DELETE"],
+    expose_headers=["Mcp-Session-Id"],  # Required!
+)
+
+# OAuth 2.1 Authentication
+from mcp.server.auth.provider import TokenVerifier
+
+class MyTokenVerifier(TokenVerifier):
+    async def verify_token(self, token: str):
+        payload = jwt.decode(token, secret, algorithms=["HS256"])
+        return AccessToken(
+            access_token=token,
+            scope=payload.get("scope", "")
+        )
+
+mcp = FastMCP("Secure Server", token_verifier=MyTokenVerifier())`
+    },
+    
+    // ========================================
+    // NEW SECTION: MCP Service Evaluation Framework
+    // ========================================
+    {
+        title: "What is MCP Inspector?",
+        bullets: [
+            "Official testing and debugging tool for validating MCP server implementations and protocol compliance.",
+            "Provides visual UI (port 6274) for interactive testing and CLI mode for automated testing/CI/CD.",
+            "Validates initialization, tool schemas, resource access, prompt templates, and error handling."
+        ],
+        code: `# MCP Inspector Architecture
+
+┌─────────────────┐
+│  MCPI (React)   │  Port 6274 - Web UI
+│  Visual Testing │
+└────────┬────────┘
+         │ HTTP
+         ▼
+┌─────────────────┐
+│  MCPP (Node.js) │  Port 6277 - Proxy Server
+│  MCP Proxy      │
+└────────┬────────┘
+         │ stdio / SSE / HTTP
+         ▼
+┌─────────────────┐
+│   MCP Server    │  Your Server Under Test
+│ (Python/Node)   │
+└─────────────────┘
+
+# Supports all transport types:
+# - stdio (local subprocess)
+# - SSE (Server-Sent Events)
+# - HTTP Streamable (production)`
+    },
+    {
+        title: "How Do We Install and Run MCP Inspector?",
+        bullets: [
+            "UI Mode: Interactive testing via browser at localhost:6274 with form-based tool inputs.",
+            "CLI Mode: Automated testing for CI/CD pipelines with JSON output for validation.",
+            "Configuration: Supports mcp.json files (Claude Desktop compatible) for server definitions."
+        ],
+        code: `# UI Mode - Interactive Testing
+npx @modelcontextprotocol/inspector node build/index.js
+
+# With environment variables
+npx @modelcontextprotocol/inspector -e API_KEY=abc123 node server.js
+
+# Access UI at: http://localhost:6274
+
+# CLI Mode - Automated Testing
+# List all tools
+npx @modelcontextprotocol/inspector --cli node server.js \\
+  --method tools/list
+
+# Call specific tool
+npx @modelcontextprotocol/inspector --cli node server.js \\
+  --method tools/call \\
+  --tool-name get_weather \\
+  --tool-arg city=London
+
+# Test remote HTTP server
+npx @modelcontextprotocol/inspector --cli \\
+  https://api.example.com/mcp \\
+  --transport streamable-http \\
+  --method tools/list`
+    },
+    {
+        title: "What Does Protocol Compliance Testing Validate?",
+        bullets: [
+            "Initialization: Protocol version negotiation, capability declaration, server info presence.",
+            "JSON-RPC Format: Valid 2.0 messages, correct id matching, proper error codes (-32601, -32602, -32603).",
+            "Tool/Resource/Prompt Schemas: Parameter validation, response format, structured output compliance."
+        ],
+        code: `# Inspector validates all these aspects:
+
+✓ Initialization Handshake
+  - Protocol version match (2025-06-18)
+  - Capability declaration (tools, resources, prompts)
+  - Server info present (name, version)
+
+✓ JSON-RPC 2.0 Compliance
+  - Valid message format
+  - Correct id matching in responses
+  - Standard error codes:
+    * -32700: Parse error
+    * -32600: Invalid request
+    * -32601: Method not found
+    * -32602: Invalid params
+    * -32603: Internal error
+
+✓ Tool Schema Validation
+  - Input parameters match schema
+  - Required fields present
+  - Response format (content array)
+  - Structured output if defined
+
+✓ Resource/Prompt Validation
+  - URI format correctness
+  - Content type headers
+  - Subscription support`
+    },
+    {
+        title: "How Do We Test Tools with MCP Inspector?",
+        bullets: [
+            "Inspector sends tools/list to discover available tools and their schemas.",
+            "Call tools via tools/call with arguments, validates response format and content structure.",
+            "Check for proper error handling, timeout behavior, and edge case responses."
+        ],
+        code: `# Testing Tool Execution Flow
+
+# 1. Discover tools
+npx @modelcontextprotocol/inspector --cli node server.js \\
+  --method tools/list > tools.json
+
+# Response:
+{
+  "tools": [
+    {
+      "name": "get_next_train_schedule",
+      "description": "Get MTR train schedule",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "line": {"type": "string"},
+          "sta": {"type": "string"}
+        },
+        "required": ["line", "sta"]
+      }
+    }
+  ]
+}
+
+# 2. Call tool
+npx @modelcontextprotocol/inspector --cli node server.js \\
+  --method tools/call \\
+  --tool-name get_next_train_schedule \\
+  --tool-arg line=TKL \\
+  --tool-arg sta=TKO
+
+# 3. Validate response format
+# ✓ Contains "result" or "error"
+# ✓ Result has "content" array
+# ✓ Content items have "type" field`
+    },
+    {
+        title: "What is the MCP Inspector UI Testing Workflow?",
+        bullets: [
+            "Request History: See all JSON-RPC messages sent with timing information.",
+            "Response Details: Full responses with color-coded success/error indicators.",
+            "Tool Testing: Form-based inputs for testing tools without writing code."
+        ],
+        code: `# Inspector UI Features
+
+┌──────────────────────────────────┐
+│  MCP Inspector UI (Port 6274)   │
+├──────────────────────────────────┤
+│                                  │
+│  🔌 Connection Status            │
+│  ✅ Connected to: node server.js │
+│                                  │
+│  📋 Tools List                   │
+│  ├─ get_next_train_schedule     │
+│  ├─ get_next_train_structured   │
+│  └─ plan_journey                 │
+│                                  │
+│  📝 Test Tool                    │
+│  Tool: [get_next_train_schedule▼]│
+│  ┌──────────────────────────┐   │
+│  │ line: TKL                │   │
+│  │ sta:  TKO                │   │
+│  │ lang: EN                 │   │
+│  └──────────────────────────┘   │
+│  [Execute Tool]                  │
+│                                  │
+│  📊 Response                     │
+│  ✅ Success (125ms)              │
+│  {                               │
+│    "content": [{                 │
+│      "type": "text",             │
+│      "text": "🚇 MTR Train..."  │
+│    }]                            │
+│  }                               │
+└──────────────────────────────────┘`
+    },
+    {
+        title: "How Do We Use Inspector for CI/CD Testing?",
+        bullets: [
+            "Create test scripts that run Inspector CLI commands and validate JSON output.",
+            "Integrate into GitHub Actions or other CI pipelines for automated regression testing.",
+            "Use jq or grep to parse results and fail builds on protocol violations or errors."
+        ],
+        code: `# GitHub Actions CI/CD Example
+
+name: MCP Server Tests
+on: [push, pull_request]
+
+jobs:
+  test-mcp:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+      
+      - name: Build MCP Server
+        run: npm run build
+      
+      - name: Test Protocol Compliance
+        run: |
+          npx @modelcontextprotocol/inspector --cli \\
+            node build/index.js \\
+            --method tools/list > tools.json
+          
+          # Validate response
+          jq -e '.tools | length > 0' tools.json
+      
+      - name: Test Tool Execution
+        run: |
+          npx @modelcontextprotocol/inspector --cli \\
+            node build/index.js \\
+            --method tools/call \\
+            --tool-name get_train \\
+            --tool-arg line=TKL > result.json
+          
+          # Check response format
+          jq -e '.content[0].type == "text"' result.json`
+    },
+    {
+        title: "What Security Features Does Inspector Provide?",
+        bullets: [
+            "Session Token Authentication: Auto-generated tokens printed to console, required for proxy access.",
+            "Localhost Binding: Inspector only binds to 127.0.0.1 to prevent remote access.",
+            "DNS Rebinding Protection: Validates Origin headers to prevent malicious sites from accessing local servers."
+        ],
+        code: `# Security Configuration
+
+# 1. Session Token (auto-generated)
+npx @modelcontextprotocol/inspector node server.js
+
+# Console output:
+# 🔑 Session token: 3a1c267fad21f7150b7d624c160b7f09...
+# 🌐 Open: http://localhost:6274/?MCP_PROXY_AUTH_TOKEN=3a1c...
+
+# 2. Localhost Binding (default)
+# Inspector binds to: 127.0.0.1:6274
+# Not accessible from: 192.168.x.x or external IPs
+
+# 3. Origin Validation
+# Request from: https://malicious-site.com
+# Response: 403 Forbidden
+
+# 4. Testing with Bearer Token
+npx @modelcontextprotocol/inspector --cli \\
+  https://api.example.com/mcp \\
+  --header "Authorization: Bearer YOUR_TOKEN" \\
+  --method tools/list
+
+# Security Checklist:
+# ✅ Auth Required: Connect without token → 401
+# ✅ Origin Validation: Invalid origin → 403
+# ✅ Localhost Only: Remote IP → Connection refused
+# ✅ HTTPS Enforcement: HTTP in prod → Redirect`
+    },
+    {
+        title: "How Do We Test Resources and Prompts?",
+        bullets: [
+            "Resources: Test with resources/list and resources/read, validate URI format and content types.",
+            "Prompts: Use prompts/list and prompts/get with arguments to test template rendering.",
+            "Subscriptions: For dynamic resources, test subscription capabilities and update notifications."
+        ],
+        code: `# Testing Resources
+
+# List available resources
+npx @modelcontextprotocol/inspector --cli node server.js \\
+  --method resources/list
+
+# Response:
+{
+  "resources": [
+    {"uri": "mtr://stations/list", "name": "MTR Stations"},
+    {"uri": "mtr://lines/map", "name": "MTR Lines Map"}
+  ]
+}
+
+# Read specific resource
+npx @modelcontextprotocol/inspector --cli node server.js \\
+  --method resources/read \\
+  --resource-uri "mtr://stations/list"
+
+# Testing Prompts
+
+# Get prompt with arguments
+npx @modelcontextprotocol/inspector --cli node server.js \\
+  --method prompts/get \\
+  --prompt-name "plan_mtr_journey" \\
+  --prompt-arg origin=TKO \\
+  --prompt-arg destination=CEN
+
+# Response:
+{
+  "messages": [{
+    "role": "user",
+    "content": {
+      "type": "text",
+      "text": "Plan journey from TKO to CEN..."
+    }
+  }]
+}`
+    },
+    {
+        title: "What are Inspector Performance Testing Capabilities?",
+        bullets: [
+            "Latency Measurement: Use time command to measure tool execution duration.",
+            "Load Testing: Write custom scripts combining Inspector CLI with concurrent execution.",
+            "Timeout Testing: Validate server behavior under slow operations and network delays."
+        ],
+        code: `# Measure Tool Execution Time
+time npx @modelcontextprotocol/inspector --cli node server.js \\
+  --method tools/call \\
+  --tool-name expensive_operation
+
+# Output: real 0m2.341s
+
+# Load Testing Script (Python)
+import asyncio
+import subprocess
+import time
+
+async def benchmark_tool(iterations: int):
+    start = time.time()
+    
+    tasks = []
+    for i in range(iterations):
+        tasks.append(
+            asyncio.create_subprocess_exec(
+                "npx", "@modelcontextprotocol/inspector",
+                "--cli", "node", "server.js",
+                "--method", "tools/call",
+                "--tool-name", "get_data",
+                "--tool-arg", f"id={i}"
+            )
+        )
+    
+    await asyncio.gather(*tasks)
+    
+    duration = time.time() - start
+    print(f"Completed {iterations} requests in {duration:.2f}s")
+    print(f"Average: {duration/iterations*1000:.2f}ms per request")
+
+# Run: asyncio.run(benchmark_tool(100))`
+    },
+    {
+        title: "What are Inspector Configuration Best Practices?",
+        bullets: [
+            "Use mcp.json for server definitions (compatible with Claude Desktop and Cursor).",
+            "Export configurations from UI via 'Server Entry' or 'Servers File' buttons for team sharing.",
+            "Track server configs in git for reproducibility and version control."
+        ],
+        code: `# mcp.json Configuration File
+
+{
+  "mcpServers": {
+    "mtr-server": {
+      "command": "python",
+      "args": ["mcp_server.py"],
+      "env": {
+        "MTR_API_KEY": "your-key",
+        "DEBUG": "true"
+      }
+    },
+    "remote-server": {
+      "type": "streamable-http",
+      "url": "https://api.example.com/mcp"
+    }
+  }
+}
+
+# Launch with config
+npx @modelcontextprotocol/inspector \\
+  --config mcp.json \\
+  --server mtr-server
+
+# Export from UI
+# 1. Click "Server Entry" → Copy JSON
+# 2. Click "Servers File" → Download mcp.json
+# 3. Commit to git: git add mcp.json
+
+# Team usage
+git clone repo
+npx @modelcontextprotocol/inspector --config mcp.json`
+    },
+    {
+        title: "UI Mode vs CLI Mode: When to Use Each?",
+        bullets: [
+            "UI Mode: Interactive development, visual debugging, exploring server capabilities, beginner-friendly testing.",
+            "CLI Mode: Automation, CI/CD pipelines, batch testing, scripted workflows, performance benchmarking.",
+            "Both modes test the same server, but UI provides rich visualization while CLI enables automation."
+        ],
+        code: `# Comparison Table
+
+╔════════════════╦════════════════╦═════════════════╗
+║    Feature     ║    UI Mode     ║    CLI Mode     ║
+╠════════════════╬════════════════╬═════════════════╣
+║ Use Case       ║ Development    ║ Automation      ║
+║ Output         ║ Visual UI      ║ JSON/text       ║
+║ Tool Testing   ║ Form inputs    ║ Command args    ║
+║ Debugging      ║ Rich visuals   ║ Raw JSON        ║
+║ Integration    ║ Manual         ║ CI/CD scripts   ║
+║ Learning       ║ Beginner       ║ Developer       ║
+║ Performance    ║ Single request ║ Batch testing   ║
+║ Port           ║ 6274           ║ N/A (no UI)     ║
+╚════════════════╩════════════════╩═════════════════╝
+
+# Use UI Mode for:
+# - First-time server testing
+# - Visual tool exploration
+# - Interactive debugging
+
+# Use CLI Mode for:
+# - GitHub Actions workflows
+# - Pre-commit hooks
+# - Load testing
+# - Automated regression testing`
+    },
+    {
+        title: "What is the Complete MCP Evaluation Workflow?",
+        bullets: [
+            "Develop server → Test locally with Inspector UI → Automate tests with Inspector CLI → Deploy with monitoring.",
+            "Use Inspector to validate protocol compliance before deploying to production.",
+            "Combine Inspector testing with LangSmith evaluation for comprehensive AI system validation."
+        ],
+        code: `# Complete MCP Evaluation Workflow
+
+# 1. Develop MCP Server
+mcp = FastMCP("My Server")
+
+@mcp.tool()
+def my_tool(param: str) -> str:
+    return f"Result: {param}"
+
+# 2. Test with Inspector UI (Development)
+npx @modelcontextprotocol/inspector python server.py
+# - Test tools interactively
+# - Verify tool schemas
+# - Check error cases
+
+# 3. Create Automated Tests (CI/CD)
+# test-mcp.sh
+#!/bin/bash
+npx @modelcontextprotocol/inspector --cli python server.py \\
+  --method tools/list
+npx @modelcontextprotocol/inspector --cli python server.py \\
+  --method tools/call --tool-name my_tool --tool-arg param=test
+
+# 4. Add to CI Pipeline
+# .github/workflows/test.yml
+- name: Test MCP Server
+  run: ./test-mcp.sh
+
+# 5. Deploy with Monitoring
+# - Track tool execution times
+# - Monitor error rates
+# - Log protocol violations
+
+# 6. Integrate with LangSmith (Optional)
+# - Use MCP tools in LangGraph agents
+# - Evaluate agent+MCP performance
+# - Track tool usage patterns`
+    },
+    {
+        title: "MCP + LangSmith: Complete Testing Strategy",
+        bullets: [
+            "MCP Inspector validates protocol compliance and server functionality (infrastructure layer).",
+            "LangSmith evaluates agent behavior and tool usage quality (application layer).",
+            "Together they provide end-to-end validation: protocol correctness + agent effectiveness."
+        ],
+        code: `# Layered Testing Strategy
+
+┌─────────────────────────────────────────┐
+│  LAYER 3: Agent Behavior Evaluation     │
+│  Tool: LangSmith                        │
+│  ├─ Agent correctness                   │
+│  ├─ Tool usage patterns                 │
+│  ├─ Response quality                    │
+│  └─ A/B testing agent configs           │
+└────────────┬────────────────────────────┘
+             │
+┌────────────▼────────────────────────────┐
+│  LAYER 2: MCP Tool Functionality        │
+│  Tool: MCP Inspector (UI/CLI)           │
+│  ├─ Tool execution correctness          │
+│  ├─ Resource access validation          │
+│  ├─ Prompt template rendering           │
+│  └─ Error handling                      │
+└────────────┬────────────────────────────┘
+             │
+┌────────────▼────────────────────────────┐
+│  LAYER 1: Protocol Compliance           │
+│  Tool: MCP Inspector                    │
+│  ├─ JSON-RPC 2.0 format                 │
+│  ├─ Initialization handshake            │
+│  ├─ Schema validation                   │
+│  └─ Transport compatibility             │
+└─────────────────────────────────────────┘
+
+# Example: Testing MTR MCP Server
+
+# Layer 1: Protocol (Inspector CLI)
+npx @modelcontextprotocol/inspector --cli python mcp_server.py \\
+  --method tools/list
+
+# Layer 2: Functionality (Inspector UI)
+# Test get_next_train_schedule with TKL/TKO
+# Verify formatted output
+
+# Layer 3: Agent Usage (LangSmith)
+from langsmith.evaluation import evaluate
+results = evaluate(
+    mtr_agent,
+    data="MTR Journey Planning",
+    evaluators=[correctness, tool_usage, helpfulness]
+)`
     }
 ];
